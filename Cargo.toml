@@ -1,0 +1,21 @@
+[package]
+name = "storyteller"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0", features = ["rc", "derive"] }
+serde_json = { version = "1.0" }
+rusqlite = { version = "0.31", features = ["serde_json"] }
+ed25519 = { version = "2.2", features = ["serde", "serde_bytes"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+bytes = { version = "1.6", features = ["serde"] }
+blake3 = { version = "1.5", features = ["serde"] }
+varint-rs = "2.2"
+rand = "0.8"
+thiserror = "1.0"
+hex = "0.4"
+smallvec = { version = "1.13.2", features = ["write", "serde", "const_new", "const_generics"] }
+fallible-iterator = "0.3"
