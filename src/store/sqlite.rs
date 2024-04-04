@@ -1,7 +1,7 @@
 use crate::patch::{Deps, Patch, ID};
 use crate::store::ObjectStore;
 use crate::Result;
-use rusqlite::{params, Error};
+use rusqlite::params;
 use smallvec::SmallVec;
 
 pub struct SqliteStore {
@@ -23,15 +23,14 @@ impl SqliteStore {
             r#"
         CREATE TABLE IF NOT EXISTS st_authors(
             author_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-            verification_key BLOB NOT NULL UNIQUE,
-            signing_key BLOB NULL
+            verification_key BLOB NOT NULL UNIQUE
         );
         CREATE TABLE IF NOT EXISTS st_patches(
             seq_no INTEGER PRIMARY KEY AUTOINCREMENT,
-            hash BLON NOT NULL UNIQUE CHECK(LENGTH(hash) = 32),
+            hash BLOB NOT NULL UNIQUE CHECK(LENGTH(hash) = 32),
             author_id BLOB NOT NULL,
             signature BLOB NOT NULL CHECK(LENGTH(signature) = 64),
-            data BLOB,
+            data JSONB,
             FOREIGN KEY (author_id) REFERENCES st_authors(author_id)
         );
         CREATE TABLE IF NOT EXISTS st_stash(
@@ -40,7 +39,7 @@ impl SqliteStore {
             hash BLOB NOT NULL UNIQUE CHECK(LENGTH(hash) = 32),
             author BLOB NOT NULL CHECK(LENGTH(author) = 32),
             signature BLOB NOT NULL CHECK(LENGTH(signature) = 64),
-            data BLOB
+            data JSONB
         );
         CREATE UNIQUE INDEX IF NOT EXISTS uq_st_stash_hash ON st_stash(hash);
         CREATE TABLE IF NOT EXISTS st_rel(
@@ -111,7 +110,7 @@ impl ObjectStore for SqliteStore {
         FROM st_patches
         WHERE hash = ?"#,
         )?;
-        let res = stmt.query_row(params![patch_id], |row| Ok(()));
+        let res = stmt.query_row(params![patch_id], |_| Ok(()));
         match res {
             Ok(_) => Ok(true),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
@@ -126,7 +125,7 @@ impl ObjectStore for SqliteStore {
         UNION
         SELECT 1 FROM st_stash WHERE hash = ?"#,
         )?;
-        let res = stmt.query_row(params![patch_id, patch_id], |row| Ok(()));
+        let res = stmt.query_row(params![patch_id, patch_id], |_| Ok(()));
         match res {
             Ok(_) => Ok(true),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),

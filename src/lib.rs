@@ -1,3 +1,4 @@
+pub mod op;
 pub mod patch;
 pub mod peer;
 pub mod store;
@@ -13,6 +14,8 @@ pub enum Error {
     Sqlite(#[from] rusqlite::Error),
     #[error("patch verification failed: {0}")]
     VerificationFailed(#[from] ed25519_dalek::SignatureError),
+    #[error("operation unauthorized")]
+    Unauthorized,
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }

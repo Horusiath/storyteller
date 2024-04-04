@@ -87,12 +87,12 @@ pub struct Patch {
 }
 
 impl Patch {
-    pub fn new<D, B>(key: &SigningKey, deps: D, data: B) -> Result<Self>
+    pub fn new<D, B>(key: &SigningKey, deps: D, data: &B) -> Result<Self>
     where
         D: IntoIterator<Item = ID>,
-        B: Into<Bytes>,
+        B: Serialize,
     {
-        let data = data.into();
+        let data: Bytes = serde_json::to_vec(data)?.into();
         let sign = key.sign(&data);
         let author = key.verifying_key().to_bytes();
         let deps = Deps::from_iter(deps);
@@ -298,7 +298,7 @@ mod test {
     fn serialize_record() {
         let data = "hello world";
         let key_pair = SigningKey::generate(&mut rand::rngs::OsRng);
-        let record = Patch::new(&key_pair, Deps::default(), data).unwrap();
+        let record = Patch::new(&key_pair, Deps::default(), &data).unwrap();
         record.verify().unwrap();
 
         let mut bytes = Vec::new();

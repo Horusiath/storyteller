@@ -1,5 +1,5 @@
-use bytes::Bytes;
 use ed25519_dalek::SigningKey;
+use serde::Serialize;
 
 use crate::patch::{Patch, ID};
 use crate::store::ObjectStore;
@@ -34,9 +34,9 @@ impl<S: ObjectStore> Peer<S> {
         &self.store
     }
 
-    pub fn commit<B>(&mut self, data: B) -> Result<Patch>
+    pub fn commit<B>(&mut self, data: &B) -> Result<Patch>
     where
-        B: Into<Bytes>,
+        B: Serialize,
     {
         let patch = Patch::new(&self.signing_key, self.heads().iter().cloned(), data)?;
         self.store.commit(&patch)?;
@@ -51,29 +51,35 @@ impl<S: ObjectStore> Peer<S> {
         let mut changed = false;
         let mut missing = Vec::new();
         let mut patches: Box<dyn Iterator<Item = Patch>> = Box::new(patches.into_iter());
-        for patch in patches {
-            patch.verify()?;
-            if !self.store.contains(patch.id())? {
-                let mut stashed = false;
-                for dep in patch.deps().iter() {
-                    if !self.store.is_integrated(dep)? {
-                        self.store.stash(&patch)?;
-                        missing.push(*dep);
-                        stashed = true;
+        loop {
+            for patch in patches {
+                patch.verify()?;
+                if !self.store.contains(patch.id())? {
+                    let mut stashed = false;
+                    for dep in patch.deps().iter() {
+                        if !self.store.is_integrated(dep)? {
+                            self.store.stash(&patch)?;
+                            if !missing.contains(dep) {
+                                missing.push(*dep);
+                            }
+                            stashed = true;
+                        }
+                    }
+
+                    if !stashed {
+                        self.store.commit(&patch)?;
+                        changed = true;
                     }
                 }
-
-                if !stashed {
-                    self.store.commit(&patch)?;
-                    changed = true;
-                }
             }
-        }
 
-        if changed {
-            changed = false;
-            self.heads = self.store.heads()?;
-            patches = Box::new(self.store.unstash()?.into_iter());
+            if changed {
+                changed = false;
+                self.heads = self.store.heads()?;
+                patches = Box::new(self.store.unstash()?.into_iter());
+            } else {
+                break;
+            }
         }
 
         Ok(missing)
@@ -97,13 +103,10 @@ impl<S: ObjectStore> Peer<S> {
 #[cfg(test)]
 mod test {
     use ed25519_dalek::SigningKey;
-    use rusqlite::Connection;
-    use std::str;
 
     use crate::patch::Patch;
     use crate::peer::Peer;
     use crate::store::sqlite::SqliteStore;
-    use crate::store::ObjectStore;
 
     fn create_peer() -> Peer<SqliteStore> {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
@@ -118,12 +121,12 @@ mod test {
     ///      \ C - E - F
     /// ```
     pub fn init_patches(p: &Peer<SqliteStore>) -> Vec<Patch> {
-        let a = Patch::new(&p.signing_key, [], "A").unwrap();
-        let b = Patch::new(&p.signing_key, [*a.id()], "B").unwrap();
-        let c = Patch::new(&p.signing_key, [*a.id()], "C").unwrap();
-        let d = Patch::new(&p.signing_key, [*b.id()], "D").unwrap();
-        let e = Patch::new(&p.signing_key, [*b.id(), *c.id()], "E").unwrap();
-        let f = Patch::new(&p.signing_key, [*e.id()], "F").unwrap();
+        let a = Patch::new(&p.signing_key, [], &"A").unwrap();
+        let b = Patch::new(&p.signing_key, [*a.id()], &"B").unwrap();
+        let c = Patch::new(&p.signing_key, [*a.id()], &"C").unwrap();
+        let d = Patch::new(&p.signing_key, [*b.id()], &"D").unwrap();
+        let e = Patch::new(&p.signing_key, [*b.id(), *c.id()], &"E").unwrap();
+        let f = Patch::new(&p.signing_key, [*e.id()], &"F").unwrap();
 
         vec![a, b, c, d, e, f]
     }
@@ -144,9 +147,9 @@ mod test {
         let patches = init_patches(&p1);
         p1.integrate(patches.clone()).unwrap();
         p2.integrate(patches.clone()).unwrap();
-        let g = p1.commit("G").unwrap();
-        let h = p2.commit("H").unwrap();
-        let i = p2.commit("I").unwrap();
+        let g = p1.commit(&"G").unwrap();
+        let h = p2.commit(&"H").unwrap();
+        let i = p2.commit(&"I").unwrap();
 
         // reconcile
         run_reconcile(&p1, &mut p2);
@@ -187,10 +190,7 @@ mod test {
             .patches(&ids)
             .unwrap()
             .into_iter()
-            .map(|p| {
-                println!("patch: {:?}", p);
-                str::from_utf8(p.data()).unwrap().to_string()
-            })
+            .map(|p| serde_json::from_slice::<String>(p.data()).unwrap())
             .collect();
         assert_eq!(in_store, vec!["A", "B", "C", "D"]);
     }
